@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -46,14 +47,22 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	ListenAddress string `yaml:"addr,omitempty"`
-	RealIPHeader  string `yaml:"real_ip_header,omitempty"`
-	RealIPPos     int    `yaml:"real_ip_pos,omitempty"`
-	CertFile      string `yaml:"certificate,omitempty"`
-	KeyFile       string `yaml:"key,omitempty"`
+	ListenAddress string            `yaml:"addr,omitempty"`
+	PathPrefix    string            `yaml:"path_prefix,omitempty"`
+	RealIPHeader  string            `yaml:"real_ip_header,omitempty"`
+	RealIPPos     int               `yaml:"real_ip_pos,omitempty"`
+	CertFile      string            `yaml:"certificate,omitempty"`
+	KeyFile       string            `yaml:"key,omitempty"`
+	LetsEncrypt   LetsEncryptConfig `yaml:"letsencrypt,omitempty"`
 
 	publicKey  libtrust.PublicKey
 	privateKey libtrust.PrivateKey
+}
+
+type LetsEncryptConfig struct {
+	Host     string `yaml:"host,omitempty"`
+	Email    string `yaml:"email,omitempty"`
+	CacheDir string `yaml:"cache_dir,omitempty"`
 }
 
 type TokenConfig struct {
@@ -69,6 +78,9 @@ type TokenConfig struct {
 func validate(c *Config) error {
 	if c.Server.ListenAddress == "" {
 		return errors.New("server.addr is required")
+	}
+	if c.Server.PathPrefix != "" && !strings.HasPrefix(c.Server.PathPrefix, "/") {
+		return errors.New("server.path_prefix must be an absolute path")
 	}
 
 	if c.Token.Issuer == "" {
@@ -108,8 +120,12 @@ func validate(c *Config) error {
 			}
 			ghac.ClientSecret = strings.TrimSpace(string(contents))
 		}
-		if ghac.ClientId == "" || ghac.ClientSecret == "" || ghac.TokenDB == "" {
-			return errors.New("github_auth.{client_id,client_secret,token_db} are required.")
+		if ghac.ClientId == "" || ghac.ClientSecret == "" || (ghac.TokenDB == "" && ghac.GCSTokenDB == nil) {
+			return errors.New("github_auth.{client_id,client_secret,token_db} are required")
+		}
+
+		if ghac.ClientId == "" || ghac.ClientSecret == "" || (ghac.GCSTokenDB != nil && (ghac.GCSTokenDB.Bucket == "" || ghac.GCSTokenDB.ClientSecretFile == "")) {
+			return errors.New("github_auth.{client_id,client_secret,gcs_token_db{bucket,client_secret_file}} are required")
 		}
 		if ghac.HTTPTimeout <= 0 {
 			ghac.HTTPTimeout = time.Duration(10 * time.Second)
@@ -208,5 +224,18 @@ func LoadConfig(fileName string) (*Config, error) {
 	if !tokenConfigured {
 		return nil, fmt.Errorf("failed to load token cert and key: none provided")
 	}
+
+	if !serverConfigured && c.Server.LetsEncrypt.Email != "" {
+		if c.Server.LetsEncrypt.CacheDir == "" {
+			return nil, fmt.Errorf("server.letsencrypt.cache_dir is required")
+		}
+		// We require that LetsEncrypt is an existing directory, because we really don't want it
+		// to be misconfigured and obtained certificates to be lost.
+		fi, err := os.Stat(c.Server.LetsEncrypt.CacheDir)
+		if err != nil || !fi.IsDir() {
+			return nil, fmt.Errorf("server.letsencrypt.cache_dir (%s) does not exist or is not a directory", c.Server.LetsEncrypt.CacheDir)
+		}
+	}
+
 	return c, nil
 }
