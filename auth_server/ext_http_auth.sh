@@ -6,7 +6,9 @@ main() {
   local status_code=$(curl -s -o /dev/null \
     -w "%{http_code}" \
     -X POST \
-    -H "Content-Type:application/json" $url -d "$pass")
+    -d "user=$user" \
+    -d "pass=$pass" \
+    $url)
    if [ "$status_code" -eq "200" ]; then
      exit 0
    elif [ "$status_code" -eq "401" ]; then
