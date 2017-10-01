@@ -4,6 +4,7 @@ ADD auth_server /docker_auth/
 COPY ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 RUN mkdir /scripts
 COPY ext_http_authz.sh /scripts/ext_http_authz.sh
+COPY ext_http_auth.sh /scripts/ext_http_auth.sh
 ENTRYPOINT ["/docker_auth/auth_server"]
 CMD ["/config/auth_config.yml"]
 EXPOSE 5001
